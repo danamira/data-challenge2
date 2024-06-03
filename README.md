@@ -8,3 +8,4 @@
 
 ### 📄 Useful Sources
 - [Community Resolution Order Solicitors](https://www.reeds.co.uk/personal-law/community-resolution-order-solicitors-deletion/)
+- [Study of UK Parliament on Out-of-Course Disposals (including CRs)](https://publications.parliament.uk/pa/cm201415/cmselect/cmhaff/799/799.pdf) (PDF File)
