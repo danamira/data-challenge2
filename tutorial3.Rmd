@@ -1,0 +1,429 @@
+---
+title: "Data Science Research Methods Tutorial 3: The expansion of the Castle Doctrine laws"
+author: "Tobias Klein and Minh Nguyen"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+\
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+For this tutorial, we will re-analyze the data of Cheng and Hoekstra (2013). You can find the paper on Canvas. The data set is provided by Cunningham (2013) in the online version of the textbook "Causal Inference: The Mixtape".
+
+Cheng and Hoekstra estimate the effects of expanding the legal possibility of using lethal force for self-defence (called the "Castle Doctrine") on violence and crime rate in US states. The Castle Doctrine was adapted in different states at different points in time. Some did not adapt it at all. Once in place, the law could lead to more or less violence and higher or lower crime rates. It could lead to more violence and crime because it may encourage the use of some force. It could also lead to less violence because it could act as a deterrant: if self-defense is less costly, then people may be less likely to attack in the first place.
+
+Analyzing the effect of this law can be difficult, as different states can have different violence and crime rates due to unobserved differences across states. This can lead to different baseline crime rates and may also be related to the likelihood to adapt the law or not. We will use a difference-in-differences approach to estimate the causal effects of the law.
+
+The data set contains data for more states than the ones we will use. We are only going to analyze the effect of the law on the states that adopt this expanstion in 2006 and drop the eight states that adopt these laws in other years. We will use the states that never adopt the law as a control group. For this to work, we need to assume parallel trends.
+
+The outcome of interest is the log of the number of homicides in state $i$ and year $t$. The treatment is whether a state has adopted the law in a given year.
+
+## Load Data
+
+We need to load the data from the Causal Mixtape's github repository. This is done by the code below. You will still need the haven package. Please first install them if they are not installed. The tidyverse and stargazer package are also necessary to load the figures and tables in this Rmarkdown file. Alternatively, you can get the raw data set is csv format from Canvas and then load it manually (remember to put the Rmarkdown file and the data file into the same folder and then set the working directory to that folder).
+
+Here I also do some basic data cleaning by first removing the states that does not expand the Castle Doctrine in 2006. I then rename the year dummy variable.
+
+```{r loaddata, message = FALSE, warning=FALSE}
+library(tidyverse)
+library(haven)
+library(stargazer)
+
+## Code to load the data from github
+read_data_mixtape <- function(df)
+{
+  full_path <- paste("https://github.com/scunning1975/mixtape/raw/master/", 
+                     df, sep = "")
+  df <- read_dta(full_path)
+  return(df)
+}
+
+data <- read_data_mixtape("castle.dta")
+
+
+## Remove the state that does not implement the Castle Doctrine in 2006
+data <- data%>% 
+        replace_na(list(effyear = 0))
+data <- data%>%
+        filter(effyear == 2006 | effyear == 0)
+
+#Generate data for year 2000
+data <- data%>%
+  mutate(year2000 = ifelse(year == 2000,1,0))
+
+## Rename column of dummy variable 
+data <- data%>%
+  rename(year2001 = 175, year2002 = 176, year2003 = 177, year2004 = 178, year2005 = 179, year2006 = 180, year2007 = 181, year2008 = 182, year2009 = 183, year2010 = 184)
+
+
+```
+
+## Difference-in-means estimator
+
+We first calculate the difference-in-means estimate for the year 2006. This is the year in which the treated states in our sample adopt the law. For this, we first generate the variable *treat*. It equals 1 if state $i$ expanded its Castle Doctrine laws in 2006 and 0 otherwise.
+
+```{r difference in mean, message = FALSE, warning=FALSE}
+## Generate treatment variable indicating which states got the the change in cdl
+data <- data%>%
+  mutate(treat = ifelse(effyear != 0,1,0))
+
+## Calculate the difference in mean for the year 2006
+compare_mean <- aggregate(homicide ~ treat, data=subset(data, year == 2006), FUN=mean)
+compare_mean[2,2] - compare_mean[1,2]
+```
+
+The difference-in-mean estimator suggests that expanding the Castle Doctrine laws increases homicides by about 60 percent.
+
+Of course, this could also be driven by selection: it could be that states that adopt have a higher homicide rate in the first place.
+
+## Change in the log homicide rate - Figure 1b of Cheng and Hoekstra (2013)
+
+Next, we replicate Figure 1b in Cheng and Hoekstra (2013). This figure shows the log homicide rate over time. It distinguishes between states that never adopt the Castle Doctrine laws and states that do in 2006.
+
+```{r figure 1b, warning=FALSE}
+## Generate mean log homicide of each group across different year
+compare_meanyear_homicide <- aggregate(l_homicide ~ year + treat, data=data, FUN=mean)
+compare_meanyear_homicide$treat<-as.character(compare_meanyear_homicide$treat)
+compare_meanyear_homicide$treat[compare_meanyear_homicide$treat == "0"] <- "Control Group"
+compare_meanyear_homicide$treat[compare_meanyear_homicide$treat == "1"] <- "Treatment Group"            
+
+## Generate the graph
+compare_meanyear_homicide_plot<-ggplot(compare_meanyear_homicide, aes(x=year, y=l_homicide, group=as.character(treat))) +
+  geom_line(aes(color=treat))+
+  geom_point(aes(color=treat))+ 
+  scale_color_manual(name = "Treatment status", values = c("Control Group" = "blue","Treatment Group" = "red")) + 
+  labs(title = "Log homicide rate across different years",y = "Log homicide",x = "Years") + 
+  scale_x_continuous(breaks = seq(2000, 2011, 1))+
+  scale_y_continuous(breaks = seq(1, 2.2, 0.1))+
+  theme_minimal() +
+  geom_vline(xintercept = 2005.2,linetype = "dashed") + 
+  theme(legend.position = "top") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+print(compare_meanyear_homicide_plot)
+```
+
+We can see that states that adopt the Castle Doctrine laws already have a higher homicide rate before adoption, as compared to those that did not. The graph also shows that these states experienced a spike in log homicides in the two years after the implementation of the treatment.
+
+## Estimating a simple difference-in-difference model
+
+In this section, we first implement the specification on slide 72 which only has two periods. We pool all the observations in the year 2000 to 2005 into a single "pre-treatment" period and pool all observations in the year 2006 to 2010 into a "post-treatment" period. We first generate the variable *post*. It equals 1 if the observation is in the year 2006 or later and equal 0 otherwise. We do not include any additional covariates in this specification.
+
+```{=tex}
+\begin{equation}
+
+y_{it} = \alpha + \gamma\cdot treated_{i} + \lambda\cdot post_{t} + \delta\cdot(treated_{i}\cdot post_{t})+ \varepsilon_{it}
+\label{eq:test}
+\end{equation}
+```
+```{r diff-and-diff slide 72, results = 'asis', warning=FALSE}
+## Generate post dummies indicating whether the observation is made from 2006 onward 
+data <- data%>%
+  mutate(post = ifelse(year >= 2006,1,0))
+
+## Run regression 
+loghomicide_reg_twoperiod <- lm(l_homicide ~ treat + post + treat*post, data = data)
+stargazer(loghomicide_reg_twoperiod, type = "html",keep.stat = c("n","rsq","f"),dep.var.caption  = "Log Homicides",dep.var.labels.include = FALSE,
+          notes.append = FALSE,
+          notes = c("<sup>&sstarf;</sup>p<0.1; <sup>&sstarf;&sstarf;</sup>p<0.05; <sup>&sstarf;&sstarf;&sstarf;</sup>p<0.01"))
+```
+
+<br> The point estimate of the treatment effect is positive, but it is not statistically significant.
+
+## Estimating a difference-in-difference model with dynamic treatment effects
+
+Next, we estimate the dynamic specification of slide 76 \begin{equation}
+
+y_{it} = x^{'}_{it}\beta +  \gamma\cdot treated_{i} + \lambda_{t} + \delta_{t}\cdot treated_{i} +  \varepsilon_{it}
+
+\end{equation}
+
+In this specification, we add additional covariates: the eleven covariates $x_{it}$ that the paper included in their specification. The list of variables is included below:
+
+-   \% of black males aged 15 - 24
+-   \% of black males aged 25 - 44
+-   \% of white males aged 15 - 24
+-   \% of white males aged 25 - 44
+-   Police per 100000 residents
+-   Unemployment rate
+-   Poverty rate
+-   Median household income
+-   Prisoner per 100000 residents
+-   Government spending in subsidy
+-   Government spending on public welfare
+
+One would want to control for these variables if they are expected to affect the outcome variable as well as change over time differently in the control group and the treatment group.
+
+In addition, we include a set of individual state "fixed effects" $\nu_{i}$. We do this by including also dummy variables for each state. They respectively equal 1 if the observation is in state $i$. If we do that, then we do not have to include the variable *treated* anymore, because each state is either treated at some point or not. The interaction between the variable *treated* and time dummies is still included to capture the actual dynamic effect. \begin{equation}
+
+y_{it} = x^{'}_{it}\beta +  \nu_{i} + \lambda_{t} + \delta_{t}\cdot treated_{i} +  \varepsilon_{it}
+
+\end{equation}
+
+In the table below, we present the result of four regressions in the first four columns:
+
+-   Column (1): Specification that does not include $x_{it}$ and includes $treated_{i}$ instead of $\nu_{i}$,
+
+-   Column (2): Specification that includes $x_{it}$ and includes $treated_{i}$ instead of $\nu_{i}$,
+
+-   Column (3): Specification that does not includes $x_{it}$ and includes $\nu_{i}$ instead of $treated_{i}$
+
+-   Column (4): Specification that includes $x_{it}$ and include $\nu_{i}$ instead of $treated_{i}$ .
+
+```{r diff-and-diff slide 77, results = 'asis',message = FALSE, warning=FALSE}
+## Generate the interaction between the dummy for treatment status and year dummy
+data <- data%>%
+  mutate(year2000treat = year2000*treat, year2001treat = year2001*treat, year2002treat = year2002*treat, year2003treat = year2003*treat, year2004treat = year2004*treat
+         , year2005treat = year2005*treat, year2006treat = year2006*treat, year2007treat = year2007*treat, year2008treat = year2008*treat
+```
+
+```{r}
+
+```
+
+```{, year2009treat = year2009*treat, year2010treat = year2010*treat)}
+
+## Run regression for homicide
+
+
+## Include stated fixed effect and covariates
+loghomicide_reg <- lm(l_homicide ~  year2000 + year2001 + year2002 + year2003 + year2004 + year2005 
+                                  + year2006 + year2007 + year2008 + year2009 + year2010
+                                  + year2000treat + year2001treat + year2002treat + year2003treat + year2004treat 
+                                  + year2006treat + year2007treat + year2008treat + year2009treat + year2010treat
+                                  + blackm_15_24 + whitem_15_24  + blackm_25_44 + whitem_25_44 
+                                  + l_exp_subsidy + l_exp_pubwelfare + l_police + unemployrt+ poverty + l_income+ l_prisoner
+                                  + state + 0, data = data) #### Note that the plus 0 is the option to run a regression with no constant for the command "lm"
+
+se_loghomicide <- sqrt(diag(vcov(loghomicide_reg)))
+
+
+## Include treatment dummy and covariates
+loghomicide_reg_nostate <- lm(l_homicide ~ treat 
+                      + year2001 + year2002 + year2003 + year2004 + year2005 + year2006 + year2007 + year2008 + year2009 + year2010
+                      + year2000treat + year2001treat + year2002treat + year2003treat + year2004treat + year2006treat 
+                      + year2007treat + year2008treat + year2009treat + year2010treat
+                      + blackm_15_24 + whitem_15_24 + blackm_25_44 + whitem_25_44 
+                      + l_exp_subsidy + l_exp_pubwelfare + l_police + unemployrt+ poverty + l_income+ l_prisoner
+                      , data = data)
+
+se_loghomicide_nostate <- sqrt(diag(vcov(loghomicide_reg_nostate)))
+
+## Include state fixed effect and no covariates
+loghomicide_reg_nocontrol <- lm(l_homicide ~ year2000 + year2001 + year2002 + year2003 + year2004 + year2005 
+                              + year2006 + year2007 + year2008 + year2009 + year2010
+                              + year2000treat + year2001treat + year2002treat + year2003treat + year2004treat + year2006treat 
+                              + year2007treat + year2008treat + year2009treat + year2010treat
+                              + state + 0, data = data)
+
+se_loghomicide_nocontrol <- sqrt(diag(vcov(loghomicide_reg_nocontrol)))
+
+## Include treatment dummy and no covariates
+loghomicide_reg_nostatecontrol <- lm(l_homicide ~ treat 
+                                  + year2000 + year2001 + year2002 + year2003 + year2004 + year2005 
+                                  + year2006 + year2007 + year2008 + year2009 + year2010
+                                  + year2000treat + year2001treat + year2002treat + year2003treat + year2004treat 
+                                  + year2006treat + year2007treat + year2008treat + year2009treat + year2010treat
+                                  + 0, data = data)
+
+se_loghomicide_nostatecontrol <- sqrt(diag(vcov(loghomicide_reg_nostatecontrol)))
+
+## Including both the state fixed effect and the treatment dummy as well as the covariates
+loghomicide_reg_includetreat <- lm(l_homicide ~  treat + year2000 + year2001 + year2002 + year2003 + year2004 + year2005 
+                      + year2006 + year2007 + year2008 + year2009 + year2010
+                      + year2000treat + year2001treat + year2002treat + year2003treat + year2004treat 
+                      + year2006treat + year2007treat + year2008treat + year2009treat + year2010treat
+                      + blackm_15_24 + whitem_15_24  + blackm_25_44 + whitem_25_44 
+                      + l_exp_subsidy + l_exp_pubwelfare + l_police + unemployrt+ poverty + l_income+ l_prisoner
+                      + state + 0, data = data)
+se_loghomicide_includetreat <- sqrt(diag(vcov(loghomicide_reg_includetreat)))
+
+## Rename the object due to some problem with stargazer packages
+m1 <- loghomicide_reg
+m2 <- loghomicide_reg_nostate
+m3 <- loghomicide_reg_nocontrol
+m4 <- loghomicide_reg_nostatecontrol
+m5 <- loghomicide_reg_includetreat
+
+## Generate the table
+stargazer::stargazer(m4, m2, m3, m1, m5, type = "html",font.size="small",no.space = FALSE, keep.stat = c("rsq", "f","n"),
+                     keep = c("year2000treat","year2001treat","year2002treat","year2003treat","year2004treat",
+                              "year2006treat","year2007treat","year2008treat","year2009treat","year2010treat"),
+                     covariate.labels = c("Placebo effect 2000", "Placebo effect 2001", "Placebo effect 2002", "Placebo effect 2003", "Placebo effect 2004",
+                                          "Treatment effect 2006", "Treatment effect 2007", "Treatment effect 2008", "Treatment effect 2009", "Treatment effect 2010"),
+                     add.lines=list(c("Additional covariates", "No", "Yes","No","Yes","Yes"), 
+                                    c("State fixed effect", "No", "No","Yes","Yes","Yes"),
+                                    c("Treatment dummy", "Yes", "Yes","No","No","Yes")),
+                     dep.var.caption  = "Log Homicides",
+                     dep.var.labels.include = FALSE,
+                     model.names = FALSE,
+                     column.separate = c(1,1, 1,1), 
+                     notes.append = FALSE,
+                     notes = c("<sup>&sstarf;</sup>p<0.1; <sup>&sstarf;&sstarf;</sup>p<0.05; <sup>&sstarf;&sstarf;&sstarf;</sup>p<0.01"))
+
+```
+
+<br>
+
+The point estimates are generally similar across specifications. We can also see that including state fixed effects reduces the variance of our estimates. When we control for the states fixed effects $\nu_{it}$ and $x_{it}$, we obtain a statistically significant estimate for the dynamic treatment effect in the year 2007 (at the 5% level).
+
+Column (5) of the table shows the results for a specification where both $treated_{i}$ and $\nu_{i}$ are included: \begin{equation}
+
+y_{it} = x^{'}_{it}\beta +  \nu_{i} + \gamma \cdot treated_{i} + \lambda_{t} + \delta_{t}\cdot treated_{i} +  \varepsilon_{it}
+
+\end{equation}
+
+We can see that the estimates in column (5) is numerically the same as the one in column (4). This is because the state fixed effect $\nu_{it}$ have effectively "captured" the variable $treated_{i}$
+
+## Presenting the results in column (4)
+
+In this section, we present the estimated results of specification (4) from the table above in a figure.
+
+```{r reg figure,message = FALSE, warning=FALSE}
+## Load the relevant value into a table
+coefficient_loghomicide <- tibble(
+  sd = c(se_loghomicide[12:16],0,se_loghomicide[17:21]),
+  mean = c(coef(loghomicide_reg)[12:16], 0,coef(loghomicide_reg)[17:21]),
+  label = c(2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010)
+)
+
+# Generate graph
+coefficient_plot_loghomicide <-  coefficient_loghomicide%>%
+  ggplot(aes(x = label, y = mean,
+             ymin = mean-1.96*sd, 
+             ymax = mean+1.96*sd)) +
+  geom_errorbar(aes(linetype = "95 percent CI"),key_glyph = "path", color = "red",size = 1,width = 0.2) +  theme_minimal() +
+  geom_point(aes(fill = "Point estimate"),key_glyph = "point", size = 2, color = "red") + 
+  labs(title = "Effect of the Castle Doctrine on homicide cases across different years",y = "Homicides per 100000",x = "Years") + 
+  scale_x_continuous(breaks = seq(1999, 2011, 1))+
+  geom_hline(yintercept = 0,
+             linetype = "dashed") + 
+  geom_vline(xintercept = 2005.2,
+             linetype = "dashed") + 
+  scale_fill_discrete(name = "") +
+  scale_linetype_discrete(name = "") + 
+  theme(legend.position = "top") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+print(coefficient_plot_loghomicide)
+```
+
+By construction, the effect is 0 in the last pre-treatment period in 2005. Before that, the figure shows deviations from parallel trends. After that, it shows dynamic effects of the law (plus deviations from parallel trends).
+
+## F test for the parallel trend assumption
+
+We can also test for the joint significance of the deviations from parallel trends before the treatment period. For this, we perform an F test
+
+-   H0: The parameters $\delta_{t}$ equal 0 for all $t \in \{2000,2001,2002,2003,2004,2005\}$
+-   Ha: For $t \in \{2000,2001,2002,2003,2004,2005\}$, there exist at least one parameter $\delta_{t} \neq 0$
+
+```{r F test pretrend,message = FALSE, warning=FALSE}
+## Run the regression with the restriction (no dynamic effect before the year 2006)
+loghomicide_reg_nopre  <-  lm(l_homicide ~ treat 
+                              + year2000 + year2001 + year2002 + year2003 + year2004 + year2005 
+                              + year2006 + year2007 + year2008 + year2009 + year2010
+                              + year2006treat + year2007treat + year2008treat + year2009treat + year2010treat
+                              + blackm_15_24 + whitem_15_24 
+                              + l_exp_subsidy + l_exp_pubwelfare + l_police + unemployrt+ poverty + l_income+ l_prisoner
+                              + state + 0, data = data)
+
+## Calculate the F statistic (Formula shown in JBM045)
+ssr_homicide_nopre   = sum(loghomicide_reg_nopre$residuals^2)
+ssr_homicide = sum(loghomicide_reg$residuals^2)
+
+restrictions_pre = 6  
+k = length(loghomicide_reg$coefficients) 
+degrees_of_freedom = 462 - k ## Slight different from JBM045 here because we do not have a constant
+
+numerator_pre = (ssr_homicide_nopre - ssr_homicide) / restrictions_pre 
+denominator = ssr_homicide / degrees_of_freedom  
+
+F_statistic_pre = numerator_pre / denominator
+print(F_statistic_pre)
+
+## Critical value for F distribution can be found using built-in qf function
+significance_level = 0.05
+quantile = 1 - significance_level  ## one-tailed test
+critical_value = qf(quantile, restrictions_pre, degrees_of_freedom)
+print(critical_value)
+
+## Get the result of the F test
+if (F_statistic_pre > critical_value) {
+  print("we reject the null hypothesis that the placebo dynamic effect coefficent is jointly equal to 0")
+} else {
+  print("we cannot reject the null hypothesis that the placebo dynamic effect coefficient is jointly equal to 0")
+}
+```
+
+<br>
+
+The F test above suggests that we do not find evidence that the parallel trend assumption does not hold.
+
+## F test for the presence of any dynamic treatment effect
+
+Finally, we would like to see if one can reject the hypothesis that all the dynamic treatment effect coefficients are equal to 0. Again, we can do this by using the F test
+
+-   H0: The parameters $\delta_{t}$ equal 0 for all $t \in \{2006,2007,2008,2009,2010\}$
+-   Ha: For $t \in \{2006,2007,2008,2009,2010\}$, there exist at least one parameter $\delta_{t} \neq 0$
+
+```{r F test posttrend,message = FALSE, warning=FALSE}
+## Test for join significance of the post trend
+## Run the regression with the restriction (no dynamic effect after the year 2006)
+loghomicide_reg_nopost  <-  lm(l_homicide ~ treat 
+                               + year2000 + year2001 + year2002 + year2003 + year2004 + year2005 
+                               + year2006 + year2007 + year2008 + year2009 + year2010
+                               + year2000treat + year2001treat + year2002treat + year2003treat + year2004treat 
+                               + blackm_15_24 + whitem_15_24  +
+                               + l_exp_subsidy + l_exp_pubwelfare + l_police + unemployrt+ poverty + l_income+ l_prisoner
+                               + state + 0, data = data)
+
+## Calculate the F statistic (Formula shown in JBM045)
+ssr_homicide_nopost   = sum(loghomicide_reg_nopost$residuals^2)
+ssr_homicide = sum(loghomicide_reg$residuals^2)
+
+restrictions_post = 5  
+k = length(loghomicide_reg$coefficients) 
+degrees_of_freedom = 462 - k ## Slight different from JBM045 here because we do not have a constant
+
+numerator_post = (ssr_homicide_nopost - ssr_homicide) / restrictions_post  
+denominator = ssr_homicide / degrees_of_freedom  
+
+F_statistic_post = numerator_post / denominator
+print(F_statistic_post)
+
+## critical value for F distribution can be found using built-in qf function
+significance_level = 0.05
+quantile = 1 - significance_level  ## one-tailed test
+critical_value = qf(quantile, restrictions_post, degrees_of_freedom)
+print(critical_value)
+
+## Get the result of the F test
+if (F_statistic_post > critical_value) {
+  print("we reject the null hypothesis that the dynamic effect coefficent is jointly equal to 0")
+} else {
+  print("we cannot reject the null hypothesis that the dynamic effect coefficient is jointly equal to 0")
+}
+```
+
+This shows that the effects are not jointly significant. Recall, however, that we found the effect in 2007 to be individually significant.
+
+Overall, it seems to be the case that we do not have enough observatio
+
+```{r}
+print("hi")
+```
+
+ns to precisely estimate the effect the law had on homicides.
+
+## References
+
+Cheng, C., & Hoekstra, M. (2013). Does Strengthening Self-Defense Law Deter Crime or Escalate Violence? Evidence from Expansions to Castle Doctrine. *The Journal of Human Resources*, 48(3), 821–853. <http://www.jstor.org/stable/23799103>
+
+Cunningham, S. (2021). Difference-in-Differences. In *Causal Inference: The Mixtape* (pp. 406–510). Yale University Press. <https://mixtape.scunning.com/09-difference_in_differences>
+
+Hlavac, M. (2022). *stargazer: Well-Formatted Regression and Summary Statistics Tables*. Social Policy Institute, Bratislava, Slovakia. R package version 5.2.3. <https://CRAN.R-project.org/package=stargazer>.
