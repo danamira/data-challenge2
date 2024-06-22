@@ -24,7 +24,7 @@ The source-code is compatible with Python version 3.12.0.
    The user must place the data in the corresponding sub-folders located in the data directory.
 4. Run the pre-processing. 
    1. Run merge-sas.py to merge all the Stop-and-Search datasets.
-         Run `python merge-sas.py`
+         Simply run `python merge-sas.py` form your terminal environment.
    2. Within each notebook, perform the pre-processing required prior to running the other cells.
 
 
