@@ -26,7 +26,7 @@ The source-code is compatible with Python version 3.12.0.
    1. Run merge-sas.py to merge all the Stop-and-Search datasets.
          Simply run `python merge-sas.py` form your terminal environment.
    2. Within each notebook, perform the pre-processing required prior to running the other cells.
-
+5. Fetch the additional datasets by running `src/data_utils/download_metro_police_data.py`.
 
 ### 📊 Running the analysis
 There are multiple models trained and evaluated for this project. Most of which are explained thoroughly in the technical report. To reproduce the results, the notebooks have been named in a clear way to explain what each file
