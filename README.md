@@ -1,11 +1,27 @@
-## JBG050 Data Challenge 2
+## JBG050 Data Challenge 2 | Group 12
 
-### ✅ TODO
-- [ ] Look what is the total percentage of crimes that have CR as their outcome? 
-- [ ] Look how these CRs are distributed across crime types? i.e, what is the percentage of CR across each crime type and what is the percentage of each crime type in all the crimes resulted in CR?
-- [ ] Decision tree of resulting into CR? -> What does the tree look like? Anything notable? If so, how confident are we in terms of bias and variance and also entropy?
-- [ ] 
+### 💡 Project Description
+This repository contains the Python source code and the `.ipynb` notebooks containing the analysis of team 12 for the course JBG050.
 
-### 📄 Useful Sources
-- [Community Resolution Order Solicitors](https://www.reeds.co.uk/personal-law/community-resolution-order-solicitors-deletion/)
-- [Study of UK Parliament on Out-of-Course Disposals (including CRs)](https://publications.parliament.uk/pa/cm201415/cmselect/cmhaff/799/799.pdf) (PDF File)
+Given a large set of Police datasets, the project was aiming towards enhancing the level of trust and confidence of London's citizens in the Metropolitan Police.
+
+### 💻 Code Structure
+Most of the code is available in Jupyter notebooks and therefore, the user is required to have a Jupyter client installed. 
+Please follow the guidance of [this](https://jupyter.org/install) link in order to install Jupyter.
+
+### 👨🏽‍💻 Installation and Setup
+We encourage the user to use a virtual environment to run this project locally. This is to isolate the environment in which the codebase and it's dependencies run from the original host environment.
+
+To achieve this you can choose to either use [Python venv](https://docs.python.org/3/library/venv.html) or a [Conda](https://www.anaconda.com/download/) environment.
+
+The source-code is compatible with Python version 3.12.0.
+
+1. Install [Python pip](https://pypi.org/project/pip/) to manage dependencies.
+2. Run `pip install -r requirements.txt` in your terminal environment (from the project root) to install the associated dependencies.
+3. Place the data correctly.
+   
+   To ensure that the stakeholder data is not shared with public or non-authorized parties, we do not include the datasets associated with analysis in this repository.
+   The user must place the data in the corresponding sub-folders located in the data directory.
+4. Run the pre-processing. 
+   1. Run merge-sas.py to merge all the Stop-and-Search datasets.
+   2. Within each notebook, perform the pre-processing required prior to running the other cells.
